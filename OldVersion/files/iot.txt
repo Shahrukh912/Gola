@@ -1,0 +1,189 @@
+#include <ESP8266WebServer.h>
+#include <ESP8266WiFi.h>
+#include<ThingSpeak.h>
+#include <Servo.h>
+
+Servo servo;
+
+char* mssid="Khan(M)";
+char* pass="faizkhan1919";
+WiFiClient client;
+
+const char* host = "api.thingspeak.com";
+long id=1896294;
+char* api="TGAM39RXUT2YWN7O";
+
+/* Put your SSID & Password */
+const char* ssid = "NodeMCU";  // Enter SSID here
+const char* password = "12345678";  //Enter Password here
+
+/* Put IP Address details */
+IPAddress local_ip(192,168,1,2);
+IPAddress gateway(192,168,1,1);
+IPAddress subnet(255,255,255,0);
+
+ESP8266WebServer server(80);
+
+uint8_t LED1pin = D7;
+bool LED1status = LOW;
+
+uint8_t LED2pin = D6;
+bool Switchstatus = LOW;
+
+uint8_t pSensor = D0;
+bool sensorStatus=true,prevSensorStatus;
+
+unsigned long int sec=0;
+int sensorFlag=0;
+
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(LED1pin, OUTPUT);
+  pinMode(pSensor,INPUT);
+  servo.attach(LED2pin);
+  
+  WiFi.softAP(ssid, password);
+  WiFi.softAPConfig(local_ip, gateway, subnet);
+  delay(100);
+  
+  server.on("/", handle_OnConnect);
+  server.on("/led1on", handle_led1on);
+  server.on("/led1off", handle_led1off);
+  server.on("/led2on", handle_led2on);
+  server.on("/led2off", handle_led2off);
+  server.onNotFound(handle_NotFound);
+  
+  server.begin();
+  WiFi.begin(mssid,pass);
+  while(WiFi.status()!=WL_CONNECTED){
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.println("Wifi Connected");
+  ThingSpeak.begin(client);
+
+  Serial.println("HTTP server started");
+}
+
+void loop() {
+  server.handleClient();
+    prevSensorStatus = sensorStatus; 
+    sensorStatus = !(digitalRead(pSensor));
+
+    if(prevSensorStatus != sensorStatus){
+      sensorFlag++;
+      if((sensorFlag == 0 || sensorFlag == 2)){
+      }
+      else if(sensorStatus == LOW){
+        handle_led1on();
+        handle_led2on();
+      }
+      else if(sensorStatus == HIGH){
+        handle_led1off();
+        handle_led2off();
+      }
+      if(sensorFlag >=4){sensorFlag=0;}
+    }
+    
+    
+//    Serial.print("Sensing: ");
+//    Serial.print(sensorStatus);
+//    Serial.println(sensorFlag);
+}
+
+
+void handle_OnConnect() {
+  LED1status = LOW;
+  Switchstatus = LOW;
+  digitalWrite(LED1pin, LOW);
+  servo.write(90);
+  Serial.println("GPIO7 Status: OFF | GPIO6 Status: OFF");
+  server.send(200, "text/html", SendHTML(LED1status,Switchstatus)); 
+}
+
+void handle_led1on() {
+  LED1status = HIGH;
+  digitalWrite(LED1pin, HIGH);
+  Serial.println("GPIO7 Status: ON");
+  ThingSpeak.setField(1,LED1status);
+  ThingSpeak.setField(2,Switchstatus);
+  int x = ThingSpeak.writeFields(id,api);
+  Serial.print("Write on ThingSpeak Status:");
+  Serial.println(x);
+  server.send(200, "text/html", SendHTML(true,Switchstatus)); 
+}
+
+void handle_led1off() {
+  LED1status = LOW;
+  digitalWrite(LED1pin, LOW);
+  Serial.println("GPIO7 Status: OFF");
+  ThingSpeak.setField(1,LED1status);
+  ThingSpeak.setField(2,Switchstatus);
+  int x = ThingSpeak.writeFields(id,api);
+  Serial.print("Write on ThingSpeak Status:");
+  Serial.println(x);
+  server.send(200, "text/html", SendHTML(false,Switchstatus)); 
+}
+
+void handle_led2on() {
+  Switchstatus = HIGH;
+  Serial.println("GPIO6 Status: ON");
+  servo.write(180);
+  ThingSpeak.setField(1,LED1status);
+  ThingSpeak.setField(2,Switchstatus);
+  int x = ThingSpeak.writeFields(id,api);
+  Serial.print("Write on ThingSpeak Status:");
+  Serial.println(x);
+  server.send(200, "text/html", SendHTML(LED1status,true)); 
+}
+
+void handle_led2off() {
+  Switchstatus = LOW;
+  Serial.println("GPIO6 Status: OFF");
+  servo.write(0);
+  ThingSpeak.setField(1,LED1status);
+  ThingSpeak.setField(2,Switchstatus);
+  int x = ThingSpeak.writeFields(id,api);
+  Serial.print("Write on ThingSpeak Status:");
+  Serial.println(x);
+  server.send(200, "text/html", SendHTML(LED1status,false)); 
+}
+
+void handle_NotFound(){
+  server.send(404, "text/plain", "Not found");
+}
+
+String SendHTML(uint8_t led1stat,uint8_t led2stat){
+  String ptr = "<!DOCTYPE html> <html>\n";
+  ptr +="<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
+  ptr +="<title>I'm Home</title>\n";
+  ptr +="<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
+  ptr +="body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
+  ptr +=".button {display: block;width: 80px;background-color: #1abc9c;border: none;color: white;padding: 13px 30px;text-decoration: none;font-size: 25px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
+  ptr +=".button-on {background-color: #1abc9c;}\n";
+  ptr +=".button-on:active {background-color: #16a085;}\n";
+  ptr +=".button-off {background-color: #34495e;}\n";
+  ptr +=".button-off:active {background-color: #2c3e50;}\n";
+  ptr +="p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
+  ptr +="</style>\n";
+  ptr +="</head>\n";
+  ptr +="<body>\n";
+  ptr +="<h1>I'm Home</h1>\n";
+  ptr +="<h3>IOT Project</h3>\n";
+  ptr +="<h5>Using Access Point(AP) Mode</h5>\n";
+  
+   if(led1stat)
+  {ptr +="<p>LED1 Status: ON</p><a class=\"button button-off\" href=\"/led1off\">OFF</a>\n";}
+  else
+  {ptr +="<p>LED1 Status: OFF</p><a class=\"button button-on\" href=\"/led1on\">ON</a>\n";}
+
+  if(led2stat)
+  {ptr +="<p>Switch1 Status: ON</p><a class=\"button button-off\" href=\"/led2off\">OFF</a>\n";}
+  else
+  {ptr +="<p>Switch1 Status: OFF</p><a class=\"button button-on\" href=\"/led2on\">ON</a>\n";}
+
+  ptr +="</body>\n";
+  ptr +="</html>\n";
+  return ptr;
+}
